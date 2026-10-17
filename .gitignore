@@ -1,0 +1,11 @@
+# Nothing generated at runtime belongs here: the plugin keeps no state on disk.
+# The API key lives in the OS keychain via tern.secrets, never in a file.
+
+# A key someone pasted into the plugin dir by mistake.
+.env
+*.key
+secrets.luau
+
+# Luau / editor
+*.bak
+.cache/

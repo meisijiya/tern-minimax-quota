@@ -1,0 +1,8 @@
+schema = 1
+id = "minimax-quota"
+name = "MiniMax Quota"
+version = "1.0.0"
+description = "Shows the MiniMax Token Plan quota in the status line."
+icon = "md-cloud-outline"
+
+window = "main.luau"

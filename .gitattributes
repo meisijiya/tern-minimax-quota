@@ -1,0 +1,10 @@
+# Keep sources LF everywhere: Windows checkouts must not rewrite Luau/TOML
+# line endings, or diffs across platforms get noisy.
+* text=auto eol=lf
+
+*.luau text eol=lf
+*.toml text eol=lf
+*.md   text eol=lf
+
+# Tern's generated type declarations are machine-produced and churn per version.
+tern.d.luau linguist-generated=true
