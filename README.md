@@ -2,9 +2,13 @@
 
 A [Tern](https://stencil.so/tern) plugin that shows your **MiniMax Token Plan quota** in the terminal status line.
 
-```
-MiniMax 65% left · week 68% · resets in 1h
-```
+**The status line segment**, always present at the bottom of the window:
+
+![The status line segment reading "MiniMax 69% left · week 59% · resets in 3h"](docs/status-line.png)
+
+**Click it** and a toast reports the result:
+
+![The toast reading "MiniMax quota 69% left · week 59% · resets in 3h" with a green check](docs/refresh-toast.png)
 
 - Auto-refreshes every **5 minutes**
 - **Click the segment** to refresh on demand (a toast reports the result)
@@ -78,6 +82,14 @@ The segment is the whole interface:
 | Click the segment | Refresh now, with a toast confirming the outcome |
 | Command palette → `MiniMax Quota: Refresh now` | Same, from the keyboard |
 | Command palette → `MiniMax Quota: Set API key` | Change the stored key |
+
+Clicking the segment and running `MiniMax Quota: Refresh now` from the palette do
+the same thing and raise the same toast:
+
+![The toast reading "MiniMax quota 69% left · week 59% · resets in 3h" with a green check](docs/refresh-toast.png)
+
+When the refresh cannot reach the API, the toast turns red and the segment states why
+(`offline`, `HTTP <code>`, `bad reply`, `no key`).
 
 ### What the numbers mean
 
