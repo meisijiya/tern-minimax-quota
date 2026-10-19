@@ -28,18 +28,47 @@ Tern has no built-in quota display of any kind — this plugin fills that gap.
 ## Install
 
 ```bash
-git clone https://github.com/meisijiya/tern-minimax-quota.git
-tern plugin install ./tern-minimax-quota
+tern plugin install https://github.com/meisijiya/tern-minimax-quota
 ```
 
-`tern plugin install` copies the package into Tern's plugins directory and reloads.
-Any of these work too:
+`tern plugin install` copies the package into Tern's plugins directory
+(`tern plugin dir`, `%APPDATA%\Tern\plugins` on Windows) and reloads. The
+plugin then loads in **every** window, whatever directory that window was
+opened in — Tern loads its plugins directory globally, not per project.
+
+Confirm it took:
 
 ```bash
-tern plugin install https://github.com/meisijiya/tern-minimax-quota.git
-tern plugin link ./tern-minimax-quota      # use this directory in place, for development
-tern plugin list                            # confirm it ends with "ready"
+tern plugin list      # must end with "ready"
 ```
+
+To remove it:
+
+```bash
+tern plugin remove minimax-quota
+```
+
+## Working on it
+
+The repository is the source; Tern's plugins directory holds an **installed
+copy**. They are two separate trees, and the copy is what actually runs. So a
+change needs two steps:
+
+```bash
+# 1. edit the repository, then commit
+git add -A && git commit -m "fix: ..."
+
+# 2. push the change into Tern's plugins directory
+tern plugin install "D:/path/to/tern-minimax-quota" --force
+```
+
+`--force` replaces an installed copy. Without it the command refuses to touch
+one that is already there.
+
+**Do not develop this with `tern plugin link`.** Linking runs the directory in
+place instead of copying it, which makes it ambiguous which tree a running
+window is using, and it records an absolute path that breaks the moment the
+directory moves or the machine changes. Edit the repository, install the copy.
 
 ### 1. Restart Tern
 
@@ -156,6 +185,10 @@ Two details in that response are easy to get wrong, and this plugin handles both
   countdown rather than showing a wrong one.
 
 ## Development
+
+Editing this repository does not change the running plugin — Tern executes its
+copy in the plugins directory. After any edit, install the copy again (see
+[Working on it](#working-on-it)) and reload.
 
 `tern.d.luau` is Tern's generated type declarations, for editor completion:
 
