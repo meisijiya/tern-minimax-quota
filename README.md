@@ -70,12 +70,18 @@ place instead of copying it, which makes it ambiguous which tree a running
 window is using, and it records an absolute path that breaks the moment the
 directory moves or the machine changes. Edit the repository, install the copy.
 
-### 1. Load the plugin
+### 1. Install the plugin
 
-The plugin registers its status segment and its palette commands when its entry
-loads, so `tern plugin reload` is enough to pick up a change: the reload re-runs
-the entry. A window opened later loads the plugin too, so no restart of the Tern
-app is needed for the palette commands to appear.
+`tern plugin install` (see [Install](#install)) copies the package into Tern's
+plugins directory and loads it. The plugin registers its status segment and
+its palette commands when its own entry loads, so both are there once the
+install is done.
+
+That is also what makes a change visible: the **installed copy** is the one
+that runs, so after editing and reinstalling it, `tern plugin reload` re-runs
+the entry and picks the change up — no restart of the Tern app needed. A
+window opened later loads the plugin too, so the palette commands appear
+there as well.
 
 ### 2. Turn on the status bar
 
@@ -141,7 +147,8 @@ Colour thresholds, by remaining quota:
 | < 10% | red (`error`) |
 
 Error states replace the numbers with a short reason: `offline`, `HTTP <code>`,
-`bad reply`, `no key — run 'Set API key'`, `no plan data`.
+`bad reply`, `no key — run 'Set API key'`, `no plan data`, or the message the
+API itself sent (e.g. `invalid api key`).
 
 ## Configuration
 
@@ -208,7 +215,7 @@ tern plugin types .
 
 - The plugin runs with Tern's plugin permissions: it can read/write files, spawn
   processes, and make network requests. It does all three only to read one API
-  endpoint and store your key in the keychain — review `main.luau`, it is ~250 lines.
+  endpoint and store your key in the keychain — review `main.luau`, it is ~430 lines.
 - The key is never written to the plugin directory, and never sent anywhere except
   `api.minimaxi.com` / `minimax.io`.
 

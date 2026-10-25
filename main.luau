@@ -15,6 +15,9 @@ local state = {
 	icon = "md-cloud-outline",
 	tone = "muted",
 	fetching = false,
+	-- Outcome of the last refresh, recorded explicitly: the toast must not
+	-- have to infer success from the rendered text.
+	lastOk = false,
 }
 
 local function tone_for(usedRatio)
@@ -115,14 +118,25 @@ local function summarize(payload)
 	}, nil
 end
 
-local function show(text, toneName)
+-- Every terminal outcome passes through show(), so this is where the busy
+-- icon is cleared: no error path can leave the segment spinning for good.
+local function clear_fetching()
+	state.icon = "md-cloud-outline"
+end
+
+-- `ok` is an explicit argument rather than something derived from the tone or
+-- the text: the server's own message can read like anything, and the toast
+-- has to report what happened, not how the sentence looks.
+local function show(text, toneName, ok)
 	state.text = text
 	state.tone = toneName
+	state.lastOk = ok == true
+	clear_fetching()
 	tern.chrome.refresh()
 end
 
 local function fail(message)
-	show("MiniMax " .. message, "error")
+	show("MiniMax " .. message, "error", false)
 end
 
 -- Marks the segment busy without wiping the last known numbers, so a click
@@ -133,12 +147,13 @@ local function mark_fetching()
 	tern.chrome.refresh()
 end
 
-local function clear_fetching()
-	state.icon = "md-cloud-outline"
-end
-
 local function onBody(result)
-	clear_fetching()
+	-- The awaitable hands over `T?`: a response that never arrived arrives as
+	-- nil, and indexing it would throw inside the await callback.
+	if result == nil then
+		fail("offline")
+		return
+	end
 	if result.error ~= nil then
 		fail("offline")
 		return
@@ -162,76 +177,161 @@ local function onBody(result)
 		fail(why)
 		return
 	end
-	show(summary.text, summary.tone)
+	show(summary.text, summary.tone, true)
+end
+
+-- A toast can raise "userdata has been destructed" when the window half went
+-- away between the await and the toast. A failed toast must not take the
+-- plugin down with it, so it is swallowed; the log keeps the evidence.
+local function toast(cx, level, title, sub)
+	if cx == nil then
+		return
+	end
+	local ok, err = pcall(function()
+		cx:toast(level, title, sub)
+	end)
+	if not ok then
+		tern.log.warn("minimax-quota: toast failed", tostring(err))
+	end
 end
 
 -- Reports the outcome when a refresh was user-triggered; silent for the timer.
--- `cx` must be the one handed to the innermost await callback: any earlier
--- WindowCx has been destroyed by the time the request comes back.
+-- The verdict comes from `state.lastOk`, written by show(): the server's own
+-- message ("invalid api key") says nothing about success, and guessing from
+-- the text turned such a failure into a green toast.
 local function notify(cx)
 	if cx == nil then
 		return
 	end
 	local detail = state.text:gsub("^MiniMax ", "")
-	if string.find(detail, "error", 1, true) == nil and
-		string.find(detail, "offline", 1, true) == nil and
-		string.find(detail, "HTTP", 1, true) == nil and
-		string.find(detail, "bad reply", 1, true) == nil and
-		string.find(detail, "no key", 1, true) == nil and
-		string.find(detail, "no plan", 1, true) == nil and
-		string.find(detail, "no remaining", 1, true) == nil then
-		cx:toast("success", "MiniMax quota", detail)
-		return
+	local level = "success"
+	if not state.lastOk then
+		level = "error"
 	end
-	cx:toast("error", "MiniMax quota", detail)
+	toast(cx, level, "MiniMax quota", detail)
 end
 
-local function poll(wantNotice)
+-- `wantNotice` asks for a toast about the outcome; `cmdCx` is the cx of the
+-- command that asked, valid only while that command runs. It is used for the
+-- immediate "already refreshing" answer, never for the outcome toast: by the
+-- time the request comes back, that cx is gone.
+local function poll(wantNotice, cmdCx)
 	if state.fetching then
+		-- A click during a request in flight used to be swallowed silently:
+		-- no toast, no movement, and the segment looked frozen. The segment
+		-- already carries the in-flight marker, so the toast only has to say
+		-- that a refresh is under way.
+		--
+		-- The click path does deliver a cx, so no text-only fallback is
+		-- needed: the segment's `command` is the action
+		-- `plugin.minimax-quota.refresh`, which dispatches this very command
+		-- and hands it the window cx. That cx is alive for the length of the
+		-- call, and the toast below happens inside it.
+		if wantNotice then
+			toast(cmdCx, "info", "MiniMax quota", "refreshing…")
+		end
 		return
 	end
 	state.fetching = true
 	mark_fetching()
 
-	tern.secrets.get("api_key"):next(function(key, err, secretsCx)
-		local apiKey = key
-		if err ~= nil or apiKey == nil or apiKey == "" then
-			apiKey = tern.getenv("MINIMAX_CN_API_KEY") or tern.getenv("MINIMAX_API_KEY")
-		end
-		if apiKey == nil or apiKey == "" then
-			state.fetching = false
-			fail("no key — run 'Set API key'")
-			-- The secrets awaitable already handed us a fresh cx; use it.
-			if wantNotice then
-				notify(secretsCx)
-			end
+	-- Every exit from the request path goes through settle(), and settle
+	-- clears the busy flag before it does anything else. A stuck flag is
+	-- fatal: every later poll returns early, so the segment stays frozen and
+	-- every click is swallowed until the window is reloaded.
+	local settled = false
+	local function settle(result, cx)
+		if settled then
 			return
 		end
+		settled = true
+		state.fetching = false
+		local ok, err = pcall(onBody, result)
+		if not ok then
+			tern.log.warn("minimax-quota: the response could not be read", tostring(err))
+			fail("bad reply")
+		end
+		if wantNotice then
+			notify(cx)
+		end
+	end
 
-		local options = {
-			headers = { Authorization = "Bearer " .. apiKey, Accept = "application/json" },
-			timeout_ms = 10_000,
-		}
+	-- The same discipline for the paths that never reach the API at all.
+	local function abandon(message, cx)
+		if settled then
+			return
+		end
+		settled = true
+		state.fetching = false
+		fail(message)
+		if wantNotice then
+			notify(cx)
+		end
+	end
 
-		tern.fetch(API_CN, options):next(function(result, _, fetchCx)
-			-- A key from the wrong region authenticates nowhere; retry on the global host.
-			if result.status == 401 or result.status == 403 then
-				tern.fetch(API_GLOBAL, options):next(function(global_result, _, globalCx)
-					state.fetching = false
-					onBody(global_result)
-					if wantNotice then
-						notify(globalCx)
-					end
+	-- The keychain read is under pcall for the same reason as the request: a
+	-- raise here would leave the busy flag set and the segment frozen for
+	-- good, with nothing to tell the user why. This one is still inside the
+	-- command's call, so cmdCx is alive and can carry the outcome.
+	local readKey = pcall(function()
+		tern.secrets.get("api_key"):next(function(key, err, secretsCx)
+			-- The callback body is guarded as well: a raise inside an await
+			-- callback ends that callback and nothing else, so the busy flag
+			-- would stay set and the segment would freeze.
+			local ok = pcall(function()
+				local apiKey = key
+				if err ~= nil or apiKey == nil or apiKey == "" then
+					apiKey = tern.getenv("MINIMAX_CN_API_KEY") or tern.getenv("MINIMAX_API_KEY")
+				end
+				if apiKey == nil or apiKey == "" then
+					-- The secrets awaitable already handed us a fresh cx; use it.
+					abandon("no key — run 'Set API key'", secretsCx)
+					return
+				end
+
+				local options = {
+					headers = { Authorization = "Bearer " .. apiKey, Accept = "application/json" },
+					timeout_ms = 10_000,
+				}
+
+				-- tern.fetch raises on a malformed URL or header, and a key with
+				-- a newline in it makes a malformed header. A raise inside an
+				-- await callback kills the callback before it can clear the
+				-- busy flag, so the request is made under pcall and every
+				-- failure ends in settle.
+				local requested = pcall(function()
+					tern.fetch(API_CN, options):next(function(result, _, fetchCx)
+						-- `result` is `FetchResult?`: a request that produced no
+						-- response at all arrives as nil.
+						if result ~= nil and (result.status == 401 or result.status == 403) then
+							-- A key from the wrong region authenticates nowhere; retry
+							-- on the global host. The busy flag stays set until that
+							-- request answers.
+							local retried = pcall(function()
+								tern.fetch(API_GLOBAL, options):next(function(global_result, _, globalCx)
+									settle(global_result, globalCx)
+								end)
+							end)
+							if not retried then
+								settle(nil, fetchCx)
+							end
+							return
+						end
+						settle(result, fetchCx)
+					end)
 				end)
-				return
-			end
-			state.fetching = false
-			onBody(result)
-			if wantNotice then
-				notify(fetchCx)
+				if not requested then
+					settle(nil, secretsCx)
+				end
+			end)
+			if not ok then
+				settle(nil, secretsCx)
 			end
 		end)
 	end)
+	if not readKey then
+		settle(nil, cmdCx)
+	end
 end
 
 local function schedule()
@@ -261,10 +361,11 @@ tern.command({
 	id = "refresh",
 	title = "MiniMax Quota: Refresh now",
 	icon = "md-refresh",
-	run = function()
-		-- Pass only the "user asked" intent; the cx to toast with is the one
-		-- the fetch awaitable hands back, never this call's.
-		poll(true)
+	run = function(cmdCx)
+		-- The cx to toast the outcome with is the one the fetch awaitable
+		-- hands back, never this call's; this one is only good for the
+		-- immediate answer to a click that arrives while a fetch is running.
+		poll(true, cmdCx)
 	end,
 })
 
@@ -296,9 +397,14 @@ tern.command({
 	end,
 })
 
--- One poll chain per instance: a second chain would double every request it
--- schedules. The chain starts by a call rather than by the definition above,
--- so the start is guarded.
+-- One poll chain per instance of this module: a second chain would double
+-- every request it schedules. The guard only covers one execution of this
+-- entry — a reload re-runs the entry and gets a fresh `started`, and the
+-- previous chain's timer can outlive it — so a reload can leave two chains
+-- running. Suppressing that would need a lease in tern.kv, but tern.kv is
+-- shared by every window, so a lease taken in one window would silence the
+-- segment in all the others. One extra request per interval is the cheaper
+-- of the two mistakes.
 local started = false
 
 local function startPolling()
@@ -306,7 +412,16 @@ local function startPolling()
 		return
 	end
 	started = true
-	poll()
+	-- The first poll is deferred by one tick. It reads the keychain and
+	-- redraws the chrome, and the entry-load hook has a 50 ms budget: over
+	-- it, the whole entry fails to load, and the segment and the commands
+	-- vanish with nothing on screen to say why. A timer callback also has
+	-- the chrome.refresh() call site the API allows.
+	tern.timer(1, function()
+		poll()
+	end)
+	-- The 5-minute chain is only registered here, not run: tern.timer just
+	-- schedules, so this costs nothing against the load budget.
 	schedule()
 end
 
