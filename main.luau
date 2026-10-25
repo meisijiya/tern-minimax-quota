@@ -242,56 +242,72 @@ local function schedule()
 	end)
 end
 
-tern.on("window_start", function(cx)
-	tern.chrome.status(function()
-		-- Clicking the segment runs the refresh command.
-		return { {
-			text = state.text,
-			icon = state.icon,
-			tone = state.tone,
-			command = "plugin.minimax-quota.refresh",
-		} }
-	end)
+-- Registered at entry load, not under tern.on("window_start"): window_start is
+-- dispatched before this plugin's window half has loaded, so a handler
+-- registered there never ran and neither the segment nor the palette commands
+-- appeared. Registering at entry load also survives a reload, which re-runs
+-- the entry.
+tern.chrome.status(function()
+	-- Clicking the segment runs the refresh command.
+	return { {
+		text = state.text,
+		icon = state.icon,
+		tone = state.tone,
+		command = "plugin.minimax-quota.refresh",
+	} }
+end)
 
-	tern.command({
-		id = "refresh",
-		title = "MiniMax Quota: Refresh now",
-		icon = "md-refresh",
-		run = function()
-			-- Pass only the "user asked" intent; the cx to toast with is the one
-			-- the fetch awaitable hands back, never this call's.
-			poll(true)
-		end,
-	})
+tern.command({
+	id = "refresh",
+	title = "MiniMax Quota: Refresh now",
+	icon = "md-refresh",
+	run = function()
+		-- Pass only the "user asked" intent; the cx to toast with is the one
+		-- the fetch awaitable hands back, never this call's.
+		poll(true)
+	end,
+})
 
-	tern.command({
-		id = "key",
-		title = "MiniMax Quota: Set API key",
-		icon = "md-key-outline",
-		run = function(inner)
-			-- A WindowCx is valid only during the call, so every async callback
-			-- uses the fresh cx it hands back rather than `inner`.
-			inner:prompt({ placeholder = "MiniMax API key", icon = "md-key-outline" }):next(function(input, promptErr, promptCx)
-				if promptErr ~= nil then
-					promptCx:toast("error", "MiniMax key prompt failed", promptErr)
+tern.command({
+	id = "key",
+	title = "MiniMax Quota: Set API key",
+	icon = "md-key-outline",
+	run = function(inner)
+		-- A WindowCx is valid only during the call, so every async callback
+		-- uses the fresh cx it hands back rather than `inner`.
+		inner:prompt({ placeholder = "MiniMax API key", icon = "md-key-outline" }):next(function(input, promptErr, promptCx)
+			if promptErr ~= nil then
+				promptCx:toast("error", "MiniMax key prompt failed", promptErr)
+				return
+			end
+			if input == nil then
+				promptCx:toast("info", "MiniMax key unchanged")
+				return
+			end
+			tern.secrets.set("api_key", input):next(function(_, err, saveCx)
+				if err ~= nil then
+					saveCx:toast("error", "MiniMax key not saved", tostring(err))
 					return
 				end
-				if input == nil then
-					promptCx:toast("info", "MiniMax key unchanged")
-					return
-				end
-				tern.secrets.set("api_key", input):next(function(_, err, saveCx)
-					if err ~= nil then
-						saveCx:toast("error", "MiniMax key not saved", tostring(err))
-						return
-					end
-					saveCx:toast("success", "MiniMax key saved")
-					poll()
-				end)
+				saveCx:toast("success", "MiniMax key saved")
+				poll()
 			end)
-		end,
-	})
+		end)
+	end,
+})
 
+-- One poll chain per instance: a second chain would double every request it
+-- schedules. The chain starts by a call rather than by the definition above,
+-- so the start is guarded.
+local started = false
+
+local function startPolling()
+	if started then
+		return
+	end
+	started = true
 	poll()
 	schedule()
-end)
+end
+
+startPolling()

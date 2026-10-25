@@ -70,11 +70,12 @@ place instead of copying it, which makes it ambiguous which tree a running
 window is using, and it records an absolute path that breaks the moment the
 directory moves or the machine changes. Edit the repository, install the copy.
 
-### 1. Restart Tern
+### 1. Load the plugin
 
-`window_start` runs **once per plugin per window**, and `tern plugin reload` only
-reloads the daemon — so a full restart of the Tern app is required. Until you do,
-the palette commands will not appear.
+The plugin registers its status segment and its palette commands when its entry
+loads, so `tern plugin reload` is enough to pick up a change: the reload re-runs
+the entry. A window opened later loads the plugin too, so no restart of the Tern
+app is needed for the palette commands to appear.
 
 ### 2. Turn on the status bar
 
