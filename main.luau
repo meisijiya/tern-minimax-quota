@@ -12,7 +12,7 @@ local WALL_CLOCK_MS = 100_000_000_000 -- above this, an end_time is a timestamp,
 
 local state = {
 	text = "MiniMax —",
-	icon = "md-cloud-outline",
+	icon = "file",
 	tone = "muted",
 	fetching = false,
 	-- Outcome of the last refresh, recorded explicitly: the toast must not
@@ -121,7 +121,7 @@ end
 -- Every terminal outcome passes through show(), so this is where the busy
 -- icon is cleared: no error path can leave the segment spinning for good.
 local function clear_fetching()
-	state.icon = "md-cloud-outline"
+	state.icon = "file"
 end
 
 -- `ok` is an explicit argument rather than something derived from the tone or
@@ -142,7 +142,7 @@ end
 -- Marks the segment busy without wiping the last known numbers, so a click
 -- shows motion rather than the whole line flashing back to a placeholder.
 local function mark_fetching()
-	state.icon = "md-refresh"
+	state.icon = "refresh"
 	state.text = state.text .. " …"
 	tern.chrome.refresh()
 end
@@ -360,7 +360,7 @@ end)
 tern.command({
 	id = "refresh",
 	title = "MiniMax Quota: Refresh now",
-	icon = "md-refresh",
+	icon = "refresh",
 	run = function(cmdCx)
 		-- The cx to toast the outcome with is the one the fetch awaitable
 		-- hands back, never this call's; this one is only good for the
@@ -372,11 +372,11 @@ tern.command({
 tern.command({
 	id = "key",
 	title = "MiniMax Quota: Set API key",
-	icon = "md-key-outline",
+	icon = "gear",
 	run = function(inner)
 		-- A WindowCx is valid only during the call, so every async callback
 		-- uses the fresh cx it hands back rather than `inner`.
-		inner:prompt({ placeholder = "MiniMax API key", icon = "md-key-outline" }):next(function(input, promptErr, promptCx)
+		inner:prompt({ placeholder = "MiniMax API key", icon = "gear" }):next(function(input, promptErr, promptCx)
 			if promptErr ~= nil then
 				promptCx:toast("error", "MiniMax key prompt failed", promptErr)
 				return
