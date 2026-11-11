@@ -12,6 +12,10 @@ local WALL_CLOCK_MS = 100_000_000_000 -- above this, an end_time is a timestamp,
 
 local state = {
 	text = "MiniMax —",
+	-- Full sentence for the click toast. The segment itself stays short:
+	-- plugin segments render at the end of the status line, so a long one
+	-- pushes the other plugins' segments off the row.
+	detail = "—",
 	icon = "file",
 	tone = "muted",
 	fetching = false,
@@ -95,6 +99,10 @@ local function summarize(payload)
 
 	local entry = best.entry
 	local parts = {}
+	-- The segment is deliberately short: plugin segments render at the end of
+	-- the status line, so a long one pushes the other plugins' segments off
+	-- the row. The full sentence rides in the click toast instead.
+	local short
 	if best.percent then
 		local left = math.floor(bestLeft)
 		local weekly = entry.current_weekly_remaining_percent
@@ -103,8 +111,10 @@ local function summarize(payload)
 		else
 			table.insert(parts, left .. "% left")
 		end
+		short = string.format("MiniMax %d%%", left)
 	else
 		table.insert(parts, tostring(bestLeft) .. " left")
+		short = "MiniMax " .. tostring(bestLeft) .. " left"
 	end
 
 	local reset = ms_until_reset(entry, "remains_time", "end_time")
@@ -113,7 +123,8 @@ local function summarize(payload)
 	end
 
 	return {
-		text = "MiniMax " .. table.concat(parts, " · "),
+		text = short,
+		detail = table.concat(parts, " · "),
 		tone = tone_for(1 - bestLeft / 100),
 	}, nil
 end
@@ -127,16 +138,26 @@ end
 -- `ok` is an explicit argument rather than something derived from the tone or
 -- the text: the server's own message can read like anything, and the toast
 -- has to report what happened, not how the sentence looks.
-local function show(text, toneName, ok)
+--
+-- `text` is what the status line shows and `detail` what the toast reports.
+-- The two differ on purpose: the segment has to stay short so it does not
+-- push the other plugins' segments off the status line.
+local function show(text, detail, toneName, ok)
 	state.text = text
+	state.detail = detail
 	state.tone = toneName
 	state.lastOk = ok == true
 	clear_fetching()
 	tern.chrome.refresh()
 end
 
+-- The segment keeps only the reason's first clause (`no key — run 'Set API
+-- key'` becomes `no key`): a long error segment would push the other
+-- plugins' segments off the status line, and the full reason rides in the
+-- click toast.
 local function fail(message)
-	show("MiniMax " .. message, "error", false)
+	local short = (message:match("^(.-)%s*—") or message):gsub("%s+$", "")
+	show("MiniMax " .. short, message, "error", false)
 end
 
 -- Marks the segment busy without wiping the last known numbers, so a click
@@ -177,7 +198,7 @@ local function onBody(result)
 		fail(why)
 		return
 	end
-	show(summary.text, summary.tone, true)
+	show(summary.text, summary.detail, summary.tone, true)
 end
 
 -- A toast can raise "userdata has been destructed" when the window half went
@@ -203,7 +224,7 @@ local function notify(cx)
 	if cx == nil then
 		return
 	end
-	local detail = state.text:gsub("^MiniMax ", "")
+	local detail = state.detail
 	local level = "success"
 	if not state.lastOk then
 		level = "error"

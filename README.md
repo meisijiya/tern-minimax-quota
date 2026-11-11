@@ -4,9 +4,9 @@ A [Tern](https://stencil.so/tern) plugin that shows your **MiniMax Token Plan qu
 
 **The status line segment**, always present at the bottom of the window:
 
-![The status line segment reading "MiniMax 69% left · week 59% · resets in 3h"](docs/status-line.png)
+![The status line segment reading "MiniMax 69%"](docs/status-line.png)
 
-**Click it** and a toast reports the result:
+**Click it** and a toast reports the full numbers:
 
 ![The toast reading "MiniMax quota 69% left · week 59% · resets in 3h" with a green check](docs/refresh-toast.png)
 
@@ -114,10 +114,14 @@ The segment is the whole interface:
 
 | Action | Result |
 |---|---|
-| Read the segment | Current 5-hour and weekly remaining quota |
+| Read the segment | Remaining quota in the 5-hour window, e.g. `MiniMax 69%` |
 | Click the segment | Refresh now, with a toast confirming the outcome |
 | Command palette → `MiniMax Quota: Refresh now` | Same, from the keyboard |
 | Command palette → `MiniMax Quota: Set API key` | Change the stored key |
+
+The segment is deliberately short: plugin segments render at the end of the
+status line, so a long one pushes the other plugins' segments off the row.
+The weekly percentage and the reset countdown live in the toast.
 
 Clicking the segment and running `MiniMax Quota: Refresh now` from the palette do
 the same thing and raise the same toast:
@@ -129,9 +133,11 @@ When the refresh cannot reach the API, the toast turns red and the segment state
 
 ### What the numbers mean
 
+The toast carries the full sentence; the segment shows only its first number.
+
 | Fragment | Meaning |
 |---|---|
-| `65% left` | Remaining quota in the **5-hour window** |
+| `65% left` | Remaining quota in the **5-hour window** — the segment shows this as `MiniMax 65%` |
 | `week 68%` | Remaining quota in the **weekly window** |
 | `resets in 1h` | Time until the 5-hour window resets |
 
